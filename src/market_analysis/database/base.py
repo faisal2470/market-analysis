@@ -1,12 +1,17 @@
-"""Placeholders for the SQLAlchemy declarative base."""
+"""
+SQLAlchemy declarative base.
 
-from typing import Any
+All ORM models should inherit from the Base class defined here.
+"""
+
+from __future__ import annotations
+
+from sqlalchemy.orm import DeclarativeBase
 
 
-def get_declarative_base() -> Any:
-    """Return the SQLAlchemy declarative base.
-
-    Returns:
-        A future declarative base class.
+class Base(DeclarativeBase):
     """
+    Base class for all SQLAlchemy ORM models.
+    """
+
     pass

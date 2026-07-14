@@ -1,7 +1,23 @@
-"""Placeholders for shared application constants."""
+"""
+Project-wide constants.
 
+This module contains configuration constants shared across the
+market_analysis package.
+"""
 
-class Constants:
-    """Namespace for future shared constants."""
+from __future__ import annotations
 
-    pass
+from pathlib import Path
+
+# ---------------------------------------------------------------------
+# Project paths
+# ---------------------------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+DATABASE_DIR = PROJECT_ROOT / "database"
+
+DATABASE_FILE = DATABASE_DIR / "market.db"
+
+# SQLite database URL understood by SQLAlchemy
+DATABASE_URL = f"sqlite:///{DATABASE_FILE.as_posix()}"
