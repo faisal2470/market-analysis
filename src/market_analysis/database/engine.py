@@ -29,7 +29,7 @@ def create_database_engine() -> Engine:
     engine = create_engine(
         DATABASE_URL,
         echo=False,
-        future=True,
+        pool_pre_ping=True,
     )
 
     return engine

@@ -7,27 +7,41 @@ with the database.
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from contextlib import contextmanager
+
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from market_analysis.database.engine import engine
 
-SessionLocal = sessionmaker(
+SessionLocal: sessionmaker[Session] = sessionmaker(
     bind=engine,
     autoflush=False,
-    autocommit=False,
-    expire_on_commit=False,
+    expire_on_commit=False
 )
 
-
-def get_session() -> Session:
+@contextmanager
+def get_session() -> Generator[Session, None, None]:
     """
-    Create a new database session.
+    Create a managed database session.
 
-    Returns
-    -------
+    Yields
+    ------
     Session
         SQLAlchemy database session.
+
+    Examples
+    --------
+    >>> with get_session() as session:
+    ...     ...
     """
 
-    return SessionLocal()
+    session = SessionLocal()
+
+    try:
+        yield session
+    finally:
+        session.close()
+
+
