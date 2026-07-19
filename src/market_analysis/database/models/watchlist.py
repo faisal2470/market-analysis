@@ -47,7 +47,6 @@ class WatchlistItem(EntityMixin, Base):
 
     __table_args__ = (
         UniqueConstraint("watchlist_id", "security_id", name="uq_watchlist_item"),
-        Index(None, "watchlist_id", "security_id"),
     )
 
     watchlist_id:   Mapped[int]         = mapped_column(ForeignKey("watchlists.id", ondelete="CASCADE"), nullable=False, index=True)
