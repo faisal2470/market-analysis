@@ -8,6 +8,7 @@ from .initialize import drop_database
 from .initialize import reset_database
 from .session import SessionLocal
 from .session import get_session
+from .crud import store_daily_bars, load_daily_bars, delete_daily_bars, ensure_security, get_security
 
 __all__ = [
     "engine",
@@ -16,4 +17,9 @@ __all__ = [
     "create_database",
     "drop_database",
     "reset_database",
+    "store_daily_bars",
+    "load_daily_bars",
+    "delete_daily_bars",
+    "ensure_security",
+    "get_security"
 ]
