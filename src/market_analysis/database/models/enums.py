@@ -86,3 +86,18 @@ class DataProvider(StrEnum):
     NSE             = "nse"
     ALPHA_VANTAGE   = "alpha_vantage"
     POLYGON         = "polygon"
+
+class SymbolColumns(StrEnum):
+    SYMBOL = "symbol"
+    COMPANY_NAME = "company_name"
+    SERIES = "series"
+    LISTING_DATE = "listing_date"
+    PAID_UP_VALUE = "paid_up_value"
+    MARKET_LOT = "market_lot"
+    ISIN = "isin"
+    FACE_VALUE = "face_value"
+
+class SecuritySeries(StrEnum):
+    EQ = "EQ"
+    BE = "BE"
+    BZ = "BZ"

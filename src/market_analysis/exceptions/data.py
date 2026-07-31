@@ -33,3 +33,26 @@ class EmptyDataError(MarketDataError):
     """
     Raised when a data source returns no data.
     """
+
+# ==========================================================================
+# NSE Exceptions
+# ==========================================================================
+
+class NSEError(Exception):
+    pass
+
+
+class NSEConnectionError(NSEError):
+    pass
+
+
+class NSETimeoutError(NSEError):
+    pass
+
+
+class NSEAuthenticationError(NSEError):
+    pass
+
+
+class NSEResponseError(NSEError):
+    pass

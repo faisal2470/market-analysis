@@ -21,3 +21,21 @@ DATABASE_FILE = DATABASE_DIR / "market.db"
 
 # SQLite database URL understood by SQLAlchemy
 DATABASE_URL = f"sqlite:///{DATABASE_FILE.as_posix()}"
+
+# ---------------------------------------------------------------------
+# Project constants
+# ---------------------------------------------------------------------
+
+DEFAULT_REFRESH_LOOKBACK_DAYS = 10
+
+# ============================================================================
+# National Stock Exchange (NSE)
+# ============================================================================
+
+NSE_BASE_URL = "https://www.nseindia.com"
+
+NSE_EQUITY_MASTER_URL = (
+    "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
+)
+
+NSE_REQUEST_TIMEOUT = 30
