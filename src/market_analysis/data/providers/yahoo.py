@@ -46,7 +46,7 @@ def build_ticker(symbol: str, exchange: Exchange) -> str:
 
     return f"{symbol.upper()}{suffix}"
 
-def download_daily_history(
+def fetch_daily_history(
     symbol: str,
     exchange: Exchange,
     *,
@@ -110,7 +110,7 @@ def download_daily_history(
 
     return data
 
-def download_intraday_history(
+def fetch_intraday_history(
     symbol: str,
     exchange: Exchange,
     *,

@@ -35,10 +35,9 @@ def get_security(session: Session, symbol: str, exchange: Exchange) -> Security 
 
     return session.scalar(statement)
 
-def create_security(
-        session: Session, symbol: str, exchange: Exchange, *,
+def create_security(session: Session, symbol: str, exchange: Exchange, *,
         name: str | None = None, isin: str | None = None,
-        security_type: SecurityType = SecurityType.EQUITY, currency: Currency = Currency.INR
+        security_type: SecurityType = SecurityType.STOCK, currency: Currency = Currency.INR
     ) -> Security:
     """
     Create a new security.
@@ -81,7 +80,7 @@ def delete_daily_bars(session: Session, security_id: int) -> None:
         )
     )
 
-def store_daily_bars(session: Session, security_id: int, df: pd.DataFrame) -> int:
+def store_daily_bars(session: Session, security_id: int, dataframe: pd.DataFrame) -> int:
     """
     Insert daily bars.
 
@@ -93,7 +92,7 @@ def store_daily_bars(session: Session, security_id: int, df: pd.DataFrame) -> in
 
     rows = []
 
-    for timestamp, row in df.iterrows():
+    for timestamp, row in dataframe.iterrows():
 
         rows.append(
             DailyBar(
@@ -150,4 +149,28 @@ def load_daily_bars(session: Session, security_id: int, *, start: date | None = 
 
     return df.set_index("Date")
 
+def get_daily_bar_dates(session: Session, security_id: int) -> pd.DatetimeIndex:
+    """
+    Return all stored daily bar dates for a security.
 
+    Parameters
+    ----------
+    session
+        Database session.
+    security_id
+        Security primary key.
+
+    Returns
+    -------
+    DatetimeIndex
+        Sorted index of stored trading dates.
+    """
+    stmt = (
+        select(DailyBar.date)
+        .where(DailyBar.security_id == security_id)
+        .order_by(DailyBar.date)
+    )
+
+    dates = session.scalars(stmt).all()
+
+    return pd.DatetimeIndex(dates)

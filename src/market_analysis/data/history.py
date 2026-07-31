@@ -13,10 +13,19 @@ import pandas as pd
 
 from sqlalchemy.orm import Session
 
+from market_analysis.utils.constants import DEFAULT_REFRESH_LOOKBACK_DAYS
 from market_analysis.data.processing import CleaningReport, ValidationReport, validate_daily_data, clean_daily_data
 from market_analysis.data.providers import yahoo
 from market_analysis.database.models.enums import DataProvider, Exchange
-from market_analysis.database import ensure_security, store_daily_bars, delete_daily_bars, load_daily_bars, get_security, get_session
+from market_analysis.database import (
+    ensure_security, 
+    store_daily_bars, 
+    delete_daily_bars, 
+    load_daily_bars, 
+    get_security, 
+    get_session,
+    get_daily_bar_dates,
+)
 
 # ============================================================================
 # Result Models
@@ -49,7 +58,7 @@ class HistoryUpdateResult:
 
 
 _PROVIDER_DOWNLOADERS = {
-    DataProvider.YAHOO: yahoo.download_daily_history,
+    DataProvider.YAHOO: yahoo.fetch_daily_history,
 }
 
 def _get_downloader(provider: DataProvider):
@@ -68,17 +77,14 @@ def _get_downloader(provider: DataProvider):
 
 
 def _download_daily(symbol: str, exchange: Exchange, provider: DataProvider, *,
-    start: date | None = None, end: date | None = None, period: str | None = None, interval: str = "1d") -> pd.DataFrame:
+    start: date | None = None, end: date | None = None, period: str | None = None) -> pd.DataFrame:
     """
     Download historical market data from the selected provider.
     """
 
     downloader = _get_downloader(provider)
 
-    return downloader(
-        symbol=symbol, exchange=exchange,
-        start=start, end=end, period=period, interval=interval,
-    )
+    return downloader(symbol=symbol, exchange=exchange, start=start, end=end, period=period)
 
 def _validate(df: pd.DataFrame) -> ValidationReport:
     """
@@ -174,17 +180,14 @@ def _load(session: Session, symbol: str, exchange: Exchange, *,
 # ============================================================================
 
 def download_daily_history(symbol: str, exchange: Exchange, provider: DataProvider = DataProvider.YAHOO, *,
-    start: date | None = None, end: date | None = None, period: str | None = None, interval: str = "1d") -> pd.DataFrame:
+    start: date | None = None, end: date | None = None, period: str | None = None) -> pd.DataFrame:
     """
     Download historical market data from a provider.
 
     This function does not validate, clean or store the data.
     """
 
-    return _download_daily(
-        symbol=symbol, exchange=exchange, provider=provider,
-        start=start, end=end, period=period, interval=interval,
-    )
+    return _download_daily(symbol=symbol, exchange=exchange, provider=provider, start=start, end=end, period=period)
 
 def store_daily_history(symbol: str, exchange: Exchange, dataframe: pd.DataFrame, *, overwrite: bool = False) -> int:
     """
@@ -218,7 +221,7 @@ def load_daily_history(symbol: str, exchange: Exchange, *, start: date | None = 
         return _load(session=session, symbol=symbol, exchange=exchange, start=start, end=end)
 
 def update_daily_history(symbol: str, exchange: Exchange, provider: DataProvider = DataProvider.YAHOO, *,
-    start: date | None = None, end: date | None = None, period: str | None = None, interval: str = "1d",
+    start: date | None = None, end: date | None = None, period: str | None = None,
     overwrite: bool = False, convert_dtypes: bool = True,
     sort_index: bool = True, remove_duplicate_index: bool = True,
     remove_duplicate_rows: bool = True,
@@ -240,7 +243,6 @@ def update_daily_history(symbol: str, exchange: Exchange, provider: DataProvider
         start=start,
         end=end,
         period=period,
-        interval=interval,
     )
 
     rows_downloaded = len(dataframe)
@@ -271,12 +273,7 @@ def update_daily_history(symbol: str, exchange: Exchange, provider: DataProvider
     # Store
     # -------------------------------------------------------------
 
-    rows_stored = store_daily_history(
-        symbol=symbol,
-        exchange=exchange,
-        dataframe=dataframe,
-        overwrite=overwrite,
-    )
+    rows_stored = store_daily_history(symbol=symbol, exchange=exchange, dataframe=dataframe, overwrite=overwrite)
 
     # -------------------------------------------------------------
     # Result
@@ -295,35 +292,127 @@ def update_daily_history(symbol: str, exchange: Exchange, provider: DataProvider
     )
 
 def refresh_daily_history(symbol: str, exchange: Exchange, provider: DataProvider = DataProvider.YAHOO, *, 
-        remove_zero_volume: bool = False) -> HistoryUpdateResult:
+        sort_index: bool = True, convert_dtypes: bool = True,
+        remove_duplicate_index: bool = True,
+        remove_duplicate_rows: bool = True,
+        drop_missing_values: bool = False,
+        remove_zero_volume: bool = False,
+        lookback_days: int = DEFAULT_REFRESH_LOOKBACK_DAYS,) -> HistoryUpdateResult:
     """
     Download and append only missing daily history.
 
     If the security is not yet present in the database,
     the complete available history is downloaded.
     """
-    existing = load_daily_history(symbol=symbol, exchange=exchange)
+    # ---------------------------------------------------------
+    # Existing stored dates
+    # ---------------------------------------------------------
 
-    if existing.empty:
+    with get_session() as session:
 
-        return update_daily_history(
-            symbol=symbol,
-            exchange=exchange,
-            provider=provider,
-            period="max",
-            overwrite=False,
-            remove_zero_volume=remove_zero_volume,
-        )
+        security = get_security(session=session, symbol=symbol, exchange=exchange)
 
-    latest_date = existing.index.max()
+        if security is None:
 
-    return update_daily_history(
+            return update_daily_history(symbol=symbol, exchange=exchange, provider=provider,
+                period="max", sort_index=sort_index,
+                remove_duplicate_index=remove_duplicate_index,
+                remove_duplicate_rows=remove_duplicate_rows,
+                drop_missing_values=drop_missing_values,
+                remove_zero_volume=remove_zero_volume,
+                convert_dtypes=convert_dtypes,
+            )
+
+        stored_dates = get_daily_bar_dates(session=session, security_id=security.id)
+
+    # ---------------------------------------------------------
+    # Download recent history
+    # ---------------------------------------------------------
+
+    dataframe = download_daily_history(
         symbol=symbol,
         exchange=exchange,
         provider=provider,
-        start=latest_date + timedelta(days=1),
-        overwrite=False,
+        start=date.today() - timedelta(days=lookback_days),
+    )
+
+    rows_downloaded = len(dataframe)
+
+    # ---------------------------------------------------------
+    # Remove bars already stored
+    # ---------------------------------------------------------
+
+    if not stored_dates.empty:
+
+        dataframe = dataframe.loc[
+            ~dataframe.index.isin(stored_dates)
+        ]
+
+    # ---------------------------------------------------------
+    # Already up to date
+    # ---------------------------------------------------------
+
+    if dataframe.empty:
+
+        return HistoryUpdateResult(
+            symbol=symbol,
+            exchange=exchange,
+            provider=provider,
+            dataframe=dataframe,
+            validation_report=None,
+            cleaning_report=None,
+            rows_downloaded=rows_downloaded,
+            rows_after_cleaning=0,
+            rows_stored=0,
+        )
+
+    # ---------------------------------------------------------
+    # Validate
+    # ---------------------------------------------------------
+
+    validation_report = _validate(dataframe)
+
+    # ---------------------------------------------------------
+    # Clean
+    # ---------------------------------------------------------
+
+    dataframe, cleaning_report = _clean(
+        dataframe,
+        sort_index=sort_index,
+        remove_duplicate_index=remove_duplicate_index,
+        remove_duplicate_rows=remove_duplicate_rows,
+        drop_missing_values=drop_missing_values,
         remove_zero_volume=remove_zero_volume,
+        convert_dtypes=convert_dtypes,
+    )
+
+    rows_after_cleaning = len(dataframe)
+
+    # ---------------------------------------------------------
+    # Store
+    # ---------------------------------------------------------
+
+    rows_stored = store_daily_history(
+        symbol=symbol,
+        exchange=exchange,
+        dataframe=dataframe,
+        overwrite=False,
+    )
+
+    # ---------------------------------------------------------
+    # Result
+    # ---------------------------------------------------------
+
+    return HistoryUpdateResult(
+        symbol=symbol,
+        exchange=exchange,
+        provider=provider,
+        dataframe=dataframe,
+        validation_report=validation_report,
+        cleaning_report=cleaning_report,
+        rows_downloaded=rows_downloaded,
+        rows_after_cleaning=rows_after_cleaning,
+        rows_stored=rows_stored,
     )
 
 
