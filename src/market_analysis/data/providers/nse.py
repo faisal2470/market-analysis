@@ -25,7 +25,7 @@ import pandas as pd
 import requests
 from collections.abc import Iterable
 
-from market_analysis.database.models.enums import SymbolColumns, SecuritySeries
+from market_analysis.database.models.enums import SecurityFields, SecuritySeries, Exchange, SecurityType, Currency
 from market_analysis.exceptions.data import NSEAuthenticationError, NSEResponseError, NSEError, NSEConnectionError, NSETimeoutError
 from market_analysis.utils.constants import (
     NSE_BASE_URL,
@@ -33,6 +33,7 @@ from market_analysis.utils.constants import (
     NSE_REQUEST_TIMEOUT,
 )
 from market_analysis.data.processing import normalize_symbol_values, filter_symbol_series
+from market_analysis.data.providers.capabilities import ProviderCapabilities
 
 class NSEClient:
     """
@@ -55,6 +56,21 @@ class NSEClient:
         self.session = requests.Session()
 
         self._initialized = False
+
+    # ==========================================================================
+    # Properties
+    # ==========================================================================
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        """
+        Return the metadata describing the information supplied by this provider.
+
+        The returned capabilities are immutable and define which canonical
+        security fields may be synchronized into the database.
+        """
+
+        return self._CAPABILITIES
 
     # ======================================================================
     # Session Management
@@ -242,21 +258,45 @@ class NSEClient:
         # Rename columns ---------------------------------------------------------
         df = df.rename(
             columns={
-                "SYMBOL"            : SymbolColumns.SYMBOL,
-                "NAME OF COMPANY"   : SymbolColumns.COMPANY_NAME,
-                "SERIES"            : SymbolColumns.SERIES,
-                "DATE OF LISTING"   : SymbolColumns.LISTING_DATE,
-                "PAID UP VALUE"     : SymbolColumns.PAID_UP_VALUE,
-                "MARKET LOT"        : SymbolColumns.MARKET_LOT,
-                "ISIN NUMBER"       : SymbolColumns.ISIN,
-                "FACE VALUE"        : SymbolColumns.FACE_VALUE,
+                "SYMBOL"            : SecurityFields.SYMBOL,
+                "NAME OF COMPANY"   : SecurityFields.NAME,
+                "SERIES"            : SecurityFields.SERIES,
+                "DATE OF LISTING"   : SecurityFields.LISTING_DATE,
+                "PAID UP VALUE"     : SecurityFields.PAID_UP_VALUE,
+                "MARKET LOT"        : SecurityFields.MARKET_LOT,
+                "ISIN NUMBER"       : SecurityFields.ISIN,
+                "FACE VALUE"        : SecurityFields.FACE_VALUE,
             }
         )
 
         # Parse provider-specific data types -------------------------------------
-        df[SymbolColumns.LISTING_DATE] = pd.to_datetime(df[SymbolColumns.LISTING_DATE], errors="coerce", format="%d-%b-%Y")
+        df[SecurityFields.LISTING_DATE]     = pd.to_datetime(df[SecurityFields.LISTING_DATE], errors="coerce", format="%d-%b-%Y").dt.date
+        df[SecurityFields.EXCHANGE]         = Exchange.NSE
+        df[SecurityFields.SECURITY_TYPE]    = SecurityType.STOCK
+        df[SecurityFields.CURRENCY]         = Currency.INR
+        df[SecurityFields.ACTIVE]           = True
 
         return df
+
+    # ==========================================================================
+    # Provider Capabilities
+    # ==========================================================================
+
+    _CAPABILITIES = ProviderCapabilities(
+        synchronizable_fields=frozenset({
+            SecurityFields.SYMBOL,
+            SecurityFields.NAME,
+            SecurityFields.EXCHANGE,
+            SecurityFields.SECURITY_TYPE,
+            SecurityFields.ISIN,
+            SecurityFields.SERIES,
+            SecurityFields.LISTING_DATE,
+            SecurityFields.PAID_UP_VALUE,
+            SecurityFields.MARKET_LOT,
+            SecurityFields.FACE_VALUE,
+        }),
+        supports_symbols=True,
+    )
 
     # =============================================================================
     # Public APIs
@@ -281,7 +321,10 @@ class NSEClient:
         Returns
         -------
         pd.DataFrame
-            Canonical symbol master.
+            Canonical security metadata.
+
+            All returned columns use the project's canonical
+            ``SecurityFields`` names.
         """
 
         # Download ----------------------------------------------------------------
@@ -295,4 +338,5 @@ class NSEClient:
         df = filter_symbol_series(df, series)
 
         return df
+
 
