@@ -1,51 +1,130 @@
-"""Placeholders for market-symbol and exchange conversions."""
 
+from __future__ import annotations
 
-def lookup_symbol(query: str) -> list[str]:
-    """Find symbols matching a query.
+from dataclasses import dataclass
+from collections.abc import Set
 
-    Args:
-        query: Text used to search symbols.
+import pandas as pd
 
-    Returns:
-        A future list of matching symbols.
+from market_analysis.database.models.enums import DataProvider, SecurityFields
+from market_analysis.database.models import Security
+from market_analysis.database import SessionLocal, SecurityUpsertSummary, upsert_securities
+from market_analysis.data.providers import ProviderCapabilities, NSEClient
+
+# ===========================================================================
+# Dataclasses
+# ===========================================================================
+
+@dataclass(slots=True)
+class SymbolDataset:
     """
-    pass
-
-
-def is_valid_ticker(ticker: str) -> bool:
-    """Validate a ticker symbol.
-
-    Args:
-        ticker: The ticker to validate.
-
-    Returns:
-        Whether the ticker is valid.
+    Canonical security metadata downloaded from a data provider.
     """
-    pass
+    provider:       DataProvider
+    capabilities:   ProviderCapabilities
+    data:           pd.DataFrame
 
+# ===========================================================================
+# Private Helpers
+# ===========================================================================
 
-def convert_ticker(ticker: str, target_format: str) -> str:
-    """Convert a ticker to a target format.
-
-    Args:
-        ticker: The source ticker.
-        target_format: The requested ticker format.
-
-    Returns:
-        A future converted ticker.
+def _create_provider(provider: DataProvider):
     """
-    pass
+    Create a data provider client.
 
+    Parameters
+    ----------
+    provider
+        Data provider to instantiate.
 
-def convert_exchange(exchange: str, target_format: str) -> str:
-    """Convert an exchange identifier to a target format.
+    Returns
+    -------
+    object
+        Initialised provider client.
 
-    Args:
-        exchange: The source exchange identifier.
-        target_format: The requested exchange format.
-
-    Returns:
-        A future converted exchange identifier.
+    Raises
+    ------
+    ValueError
+        If the provider is not supported.
     """
-    pass
+
+    match provider:
+        case DataProvider.NSE:
+            return NSEClient()
+        case _:
+            raise ValueError(f"Unsupported data provider: {provider}")
+
+def _compute_allowed_fields(dataset: SymbolDataset) -> frozenset[SecurityFields]:
+    """
+    Compute the set of security fields that may be synchronized.
+
+    Parameters
+    ----------
+    dataset
+        Downloaded symbol dataset.
+
+    Returns
+    -------
+    Set[SecurityFields]
+        Fields that are supported by both the provider and the
+        Security model.
+    """
+
+    return (
+        dataset.capabilities.synchronizable_fields
+        &
+        Security.synchronizable_fields
+    )
+
+# ===========================================================================
+# Public APIs
+# ===========================================================================
+
+def fetch_symbols(provider: DataProvider) -> SymbolDataset:
+    """
+    Download and normalize security metadata from a data provider.
+
+    Parameters
+    ----------
+    provider
+        Data provider to fetch symbols from.
+
+    Returns
+    -------
+    SymbolDataset
+        Canonical security metadata together with provider metadata.
+    """
+
+    client = _create_provider(provider)
+
+    return SymbolDataset(provider=provider, capabilities=client.capabilities, data=client.fetch_symbols(series=None))
+
+def refresh_symbols(provider: DataProvider) -> SecurityUpsertSummary:
+    """
+    Synchronize security metadata into the database.
+
+    Parameters
+    ----------
+    provider
+        Data provider used to synchronize security metadata.
+
+    Returns
+    -------
+    SecurityUpsertSummary
+        Summary of the synchronization.
+    """
+
+    dataset = fetch_symbols(provider)
+
+    allowed_fields = _compute_allowed_fields(dataset)
+
+    with SessionLocal() as session:
+
+        summary = upsert_securities(
+            session=session,
+            securities=dataset.data,
+            allowed_fields=allowed_fields,
+        )
+
+    return summary
+

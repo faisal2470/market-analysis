@@ -5,6 +5,7 @@ from .history import (
     store_daily_history,
     update_daily_history,
 )
+from .symbols import fetch_symbols, refresh_symbols
 
 __all__ = [
     "download_daily_history",
@@ -12,4 +13,6 @@ __all__ = [
     "refresh_daily_history",
     "store_daily_history",
     "update_daily_history",
+    "fetch_symbols",
+    "refresh_symbols",
 ]
