@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 import pandas as pd
 
-from market_analysis.database.models.enums import SecuritySeries, SymbolColumns
+from market_analysis.database.models.enums import SecuritySeries, SecurityFields
 
 # =============================================================================
 # Value Normalization
@@ -35,13 +35,13 @@ def normalize_symbol_values(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Normalize string columns ------------------------------------------------
-    df[SymbolColumns.SYMBOL]        = df[SymbolColumns.SYMBOL       ].str.strip().str.upper()
-    df[SymbolColumns.COMPANY_NAME]  = df[SymbolColumns.COMPANY_NAME ].str.strip()
-    df[SymbolColumns.SERIES]        = df[SymbolColumns.SERIES       ].str.strip().str.upper()
-    df[SymbolColumns.ISIN]          = df[SymbolColumns.ISIN         ].str.strip().str.upper()
+    df[SecurityFields.SYMBOL]       = df[SecurityFields.SYMBOL      ].str.strip().str.upper()
+    df[SecurityFields.NAME]         = df[SecurityFields.NAME        ].str.strip()
+    df[SecurityFields.SERIES]       = df[SecurityFields.SERIES      ].str.strip().str.upper()
+    df[SecurityFields.ISIN]         = df[SecurityFields.ISIN        ].str.strip().str.upper()
 
     # Finalize ---------------------------------------------------------------
-    return df.sort_values(SymbolColumns.SYMBOL).reset_index(drop=True)
+    return df.sort_values(SecurityFields.SYMBOL).reset_index(drop=True)
 
 # =============================================================================
 # Series Filtering
@@ -78,6 +78,6 @@ def filter_symbol_series(df: pd.DataFrame, series: SecuritySeries | str | Iterab
 
     allowed = {str(value).strip().upper() for value in series}
 
-    return df[df[SymbolColumns.SERIES].isin(allowed)].reset_index(drop=True)
+    return df[df[SecurityFields.SERIES].isin(allowed)].reset_index(drop=True)
 
 

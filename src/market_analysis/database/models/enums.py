@@ -87,15 +87,24 @@ class DataProvider(StrEnum):
     ALPHA_VANTAGE   = "alpha_vantage"
     POLYGON         = "polygon"
 
-class SymbolColumns(StrEnum):
-    SYMBOL = "symbol"
-    COMPANY_NAME = "company_name"
-    SERIES = "series"
-    LISTING_DATE = "listing_date"
-    PAID_UP_VALUE = "paid_up_value"
-    MARKET_LOT = "market_lot"
-    ISIN = "isin"
-    FACE_VALUE = "face_value"
+class SecurityFields(StrEnum):
+    SYMBOL          = "symbol"
+    NAME            = "name"
+
+    EXCHANGE        = "exchange"
+    SECURITY_TYPE   = "security_type"
+
+    ISIN            = "isin"
+    SERIES          = "series"
+
+    LISTING_DATE    = "listing_date"
+
+    PAID_UP_VALUE   = "paid_up_value"
+    MARKET_LOT      = "market_lot"
+    FACE_VALUE      = "face_value"
+
+    CURRENCY        = "currency"
+    ACTIVE          = "active"
 
 class SecuritySeries(StrEnum):
     EQ = "EQ"
