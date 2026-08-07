@@ -23,19 +23,14 @@ from io import BytesIO
 
 import pandas as pd
 import requests
-from collections.abc import Iterable
 
-from market_analysis.database.models.enums import SecurityFields, SecuritySeries, Exchange, SecurityType, Currency
 from market_analysis.exceptions.data import NSEAuthenticationError, NSEResponseError, NSEError, NSEConnectionError, NSETimeoutError
-from market_analysis.utils.constants import (
-    NSE_BASE_URL,
-    NSE_EQUITY_MASTER_URL,
-    NSE_REQUEST_TIMEOUT,
-)
-from market_analysis.data.processing import normalize_symbol_values, filter_symbol_series
+from market_analysis.utils.constants import NSE_BASE_URL, NSE_EQUITY_MASTER_URL, NSE_REQUEST_TIMEOUT
+from market_analysis.database.models.enums import SecurityFields, Exchange, SecurityType, Currency
 from market_analysis.data.providers.capabilities import ProviderCapabilities
+from market_analysis.data.providers.base import ProviderClient
 
-class NSEClient:
+class NSEClient(ProviderClient):
     """
     HTTP client for communicating with the National Stock Exchange.
 
@@ -56,6 +51,26 @@ class NSEClient:
         self.session = requests.Session()
 
         self._initialized = False
+
+    # ==========================================================================
+    # Provider Capabilities
+    # ==========================================================================
+
+    _CAPABILITIES = ProviderCapabilities(
+        synchronizable_fields=frozenset({
+            SecurityFields.SYMBOL,
+            SecurityFields.NAME,
+            SecurityFields.EXCHANGE,
+            SecurityFields.SECURITY_TYPE,
+            SecurityFields.ISIN,
+            SecurityFields.SERIES,
+            SecurityFields.LISTING_DATE,
+            SecurityFields.PAID_UP_VALUE,
+            SecurityFields.MARKET_LOT,
+            SecurityFields.FACE_VALUE,
+        }),
+        supports_symbols=True,
+    )
 
     # ==========================================================================
     # Properties
@@ -187,7 +202,7 @@ class NSEClient:
         raise NSEError("Unexpected failure while communicating with NSE.")
 
     # ======================================================================
-    # Download Helpers
+    # Symbol Downloaders
     # ======================================================================
     
     def _download_csv(self, url: str, **kwargs) -> pd.DataFrame:
@@ -232,11 +247,17 @@ class NSEClient:
         response = self._get(url, use_session=False, **kwargs)
         return response.json()
 
+    def _download_symbols(self):
+        """
+        Download the raw NSE equity symbol master.
+        """
+        return self._download_csv(NSE_EQUITY_MASTER_URL)
+
     # =============================================================================
     # Symbol Processing
     # =============================================================================
 
-    def _normalize_symbol_master(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _canonicalise_symbols(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Convert the raw NSE symbol master into the canonical schema.
 
@@ -250,7 +271,7 @@ class NSEClient:
         pd.DataFrame
             Symbol master using the project's canonical column names.
         """
-        df = df.copy()
+        df = data.copy()
 
         # Normalize column names -------------------------------------------------
         df.columns = df.columns.str.strip()
@@ -271,72 +292,12 @@ class NSEClient:
 
         # Parse provider-specific data types -------------------------------------
         df[SecurityFields.LISTING_DATE]     = pd.to_datetime(df[SecurityFields.LISTING_DATE], errors="coerce", format="%d-%b-%Y").dt.date
+        df[SecurityFields.FACE_VALUE]       = df[SecurityFields.FACE_VALUE].astype("Float64")
+        df[SecurityFields.PAID_UP_VALUE]    = df[SecurityFields.PAID_UP_VALUE].astype("Float64")
         df[SecurityFields.EXCHANGE]         = Exchange.NSE
         df[SecurityFields.SECURITY_TYPE]    = SecurityType.STOCK
         df[SecurityFields.CURRENCY]         = Currency.INR
         df[SecurityFields.ACTIVE]           = True
 
         return df
-
-    # ==========================================================================
-    # Provider Capabilities
-    # ==========================================================================
-
-    _CAPABILITIES = ProviderCapabilities(
-        synchronizable_fields=frozenset({
-            SecurityFields.SYMBOL,
-            SecurityFields.NAME,
-            SecurityFields.EXCHANGE,
-            SecurityFields.SECURITY_TYPE,
-            SecurityFields.ISIN,
-            SecurityFields.SERIES,
-            SecurityFields.LISTING_DATE,
-            SecurityFields.PAID_UP_VALUE,
-            SecurityFields.MARKET_LOT,
-            SecurityFields.FACE_VALUE,
-        }),
-        supports_symbols=True,
-    )
-
-    # =============================================================================
-    # Public APIs
-    # =============================================================================
-
-    def fetch_symbols(self, *, series: SecuritySeries | str | Iterable[str] | None = SecuritySeries.EQ) -> pd.DataFrame:
-        """
-        Download the NSE symbol master.
-
-        Parameters
-        ----------
-        series
-            Security series to retain.
-
-            Examples
-            --------
-            SecuritySeries.EQ
-            "EQ"
-            ["EQ", "BE"]
-            None
-
-        Returns
-        -------
-        pd.DataFrame
-            Canonical security metadata.
-
-            All returned columns use the project's canonical
-            ``SecurityFields`` names.
-        """
-
-        # Download ----------------------------------------------------------------
-        df = self._download_csv(NSE_EQUITY_MASTER_URL)
-
-        # Provider normalization --------------------------------------------------
-        df = self._normalize_symbol_master(df)
-
-        # General Processing ------------------------------------------------------
-        df = normalize_symbol_values(df)
-        df = filter_symbol_series(df, series)
-
-        return df
-
 

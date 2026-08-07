@@ -3,7 +3,7 @@ Immutable description of the data supported by a market data provider.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from market_analysis.database.models.enums import SecurityFields
 
@@ -15,7 +15,7 @@ class ProviderCapabilities:
     The synchronization layer uses this metadata to determine which
     fields may be updated in the database.
     """
-    synchronizable_fields:      frozenset[SecurityFields]
+    synchronizable_fields:      frozenset[SecurityFields] = field(default_factory=frozenset)
 
     supports_symbols:           bool = False
     supports_daily_history:     bool = False

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from collections.abc import Set
 
 import pandas as pd
 
@@ -97,7 +96,7 @@ def fetch_symbols(provider: DataProvider) -> SymbolDataset:
 
     client = _create_provider(provider)
 
-    return SymbolDataset(provider=provider, capabilities=client.capabilities, data=client.fetch_symbols(series=None))
+    return SymbolDataset(provider=provider, capabilities=client.capabilities, data=client.fetch_symbols())
 
 def refresh_symbols(provider: DataProvider) -> SecurityUpsertSummary:
     """
