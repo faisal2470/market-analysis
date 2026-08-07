@@ -1,8 +1,10 @@
 
 from .nse import NSEClient
+from .yahoo import YahooClient
 from .capabilities import ProviderCapabilities
 
 __all__ = [
     "NSEClient",
-    "ProviderCapabilities"
+    "YahooClient",
+    "ProviderCapabilities",
 ]

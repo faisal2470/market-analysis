@@ -6,167 +6,147 @@ data from Yahoo Finance.
 """
 
 from __future__ import annotations
-from market_analysis.exceptions import UnsupportedExchangeError, EmptyDataError, DataDownloadError
+
 
 from datetime import date
-
+from typing import ClassVar
 import pandas as pd
 import yfinance as yf
 
+from market_analysis.exceptions import DataDownloadError, EmptyDataError, UnsupportedExchangeError
 from market_analysis.database.models.enums import Exchange
+from market_analysis.database.models import Security
+from market_analysis.data.providers.capabilities import ProviderCapabilities
+from market_analysis.data.providers.base import ProviderClient
 
-_YAHOO_EXCHANGE_SUFFIXES: dict[Exchange, str] = {
-    Exchange.NSE: ".NS",
-    Exchange.BSE: ".BO",
-}
-
-def build_ticker(symbol: str, exchange: Exchange) -> str:
+class YahooClient(ProviderClient):
     """
-    Build a Yahoo Finance ticker.
+    Client for downloading market data from Yahoo Finance.
 
-    Parameters
-    ----------
-    symbol
-        Exchange trading symbol.
-    exchange
-        Exchange on which the security trades.
-
-    Returns
-    -------
-    str
-        Yahoo Finance ticker.
+    This client is responsible only for communicating with Yahoo Finance
+    and returning canonical data structures. It performs no validation,
+    cleaning, filtering, or database operations.
     """
+    # ======================================================================
+    # Construction
+    # ======================================================================
 
-    try:
-        suffix = _YAHOO_EXCHANGE_SUFFIXES[exchange]
-    except KeyError as exc:
-        raise UnsupportedExchangeError(
-            f"Exchange '{exchange}' is not supported by Yahoo Finance."
-        ) from exc
+    def __init__(self) -> None:
+        """
+        Initialize the Yahoo Finance client.
+        """
 
-    return f"{symbol.upper()}{suffix}"
+        super().__init__()
 
-def fetch_daily_history(
-    symbol: str,
-    exchange: Exchange,
-    *,
-    start: date | None = None,
-    end: date | None = None,
-    period: str | None = None,
-    auto_adjust: bool = False,
-) -> pd.DataFrame:
-    """
-    Download daily historical OHLCV data.
+    # ======================================================================
+    # Class Variables
+    # ======================================================================
 
-    Exactly one of ``period`` or ``start`` should normally be supplied.
+    _EXCHANGE_SUFFIXES: ClassVar[dict[Exchange, str]]   = {Exchange.NSE: ".NS", Exchange.BSE: ".BO"}
+    _CAPABILITIES:      ClassVar[ProviderCapabilities]  = ProviderCapabilities(supports_daily_history=True, supports_intraday_history=True)
 
-    Parameters
-    ----------
-    symbol
-        Trading symbol.
-    exchange
-        Exchange on which the security trades.
-    start
-        Start date.
-    end
-        End date.
-    period
-        Yahoo Finance period string (e.g. "1y", "5y", "max").
-    auto_adjust
-        Whether Yahoo should automatically adjust OHLC prices.
+    # ==========================================================================
+    # Properties
+    # ==========================================================================
 
-    Returns
-    -------
-    pandas.DataFrame
-        Historical OHLCV data.
-    """
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return self._CAPABILITIES
 
-    ticker = build_ticker(symbol, exchange)
+    # ========================================================================
+    # Helpers
+    # ========================================================================
 
-    try:
-        data = yf.download(
-            ticker,
-            start=start,
-            end=end,
-            period=period,
-            interval="1d",
-            auto_adjust=auto_adjust,
-            progress=False,
-            actions=False,
-        )
+    def _build_ticker(self, security: Security) -> str:
+        """
+        Build a Yahoo Finance ticker.
+        """
+        try:
+            suffix = self._EXCHANGE_SUFFIXES[security.exchange]
+        except KeyError as exc:
+            raise UnsupportedExchangeError(
+                f"Exchange '{security.exchange}' is not supported by Yahoo Finance."
+            ) from exc
+
+        return f"{security.symbol.upper()}{suffix}"
+
+    # ========================================================================
+    # Daily History
+    # ========================================================================
+
+    def _download_daily_history(self, security: Security, *,
+        start: date | None = None, end: date | None = None, period: str | None = None,
+        auto_adjust: bool = False) -> pd.DataFrame:
+        """
+        Download raw daily historical OHLCV data.
+        """
+
+        ticker = self._build_ticker(security)
+
+        try:
+            data = yf.download(ticker,
+                start       = start,
+                end         = end,
+                period      = period,
+                interval    = "1d",
+                auto_adjust = auto_adjust,
+                progress    = False,
+                actions     = False,
+            )
+        except Exception as exc:
+            raise DataDownloadError(f"Failed to download '{ticker}' from Yahoo Finance.") from exc
+
+        if data.empty:
+            raise EmptyDataError(f"No historical data returned for '{ticker}'.")
+
+        return data
+
+    def _canonicalize_daily_history(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert Yahoo Finance daily history into the project's canonical format.
+        """
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.droplevel("Ticker")
-    except Exception as exc:
-        raise DataDownloadError(
-            f"Failed to download '{ticker}' from Yahoo Finance."
-        ) from exc
 
-    if data.empty:
-        raise EmptyDataError(
-            f"No historical data returned for '{ticker}'."
-        )
+        data.index.name = "Date"
 
-    data.index.name = "Date"
+        return data.copy()
 
-    return data
+    # ========================================================================
+    # Intraday History
+    # ========================================================================
 
-def fetch_intraday_history(
-    symbol: str,
-    exchange: Exchange,
-    *,
-    interval: str = "5m",
-    period: str = "5d",
-    auto_adjust: bool = False,
-) -> pd.DataFrame:
-    """
-    Download intraday historical data.
+    def _download_intraday_history(self, security: Security, *,
+        interval: str = "5m", period: str = "5d",
+        auto_adjust: bool = False) -> pd.DataFrame:
+        """
+        Download raw intraday OHLCV data.
+        """
+        ticker = self._build_ticker(security)
 
-    Parameters
-    ----------
-    symbol
-        Trading symbol.
-    exchange
-        Exchange on which the security trades.
-    interval
-        Yahoo Finance interval.
-    period
-        Yahoo Finance period.
-    auto_adjust
-        Whether Yahoo should automatically adjust OHLC prices.
+        try:
+            data = yf.download(ticker,
+                interval    = interval,
+                period      = period,
+                auto_adjust = auto_adjust,
+                progress    = False,
+                actions     = False,
+            )
+        except Exception as exc:
+            raise DataDownloadError(f"Failed to download '{ticker}' from Yahoo Finance.") from exc
 
-    Returns
-    -------
-    pandas.DataFrame
-        Intraday OHLCV data.
-    """
+        if data.empty:
+            raise EmptyDataError(f"No intraday data returned for '{ticker}'.")
 
-    ticker = build_ticker(symbol, exchange)
+        return data
 
-    try:
-        data = yf.download(
-            ticker,
-            interval=interval,
-            period=period,
-            auto_adjust=auto_adjust,
-            progress=False,
-            actions=False,
-        )
+    def _canonicalize_intraday_history(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert Yahoo Finance intraday history into the project's canonical format.
+        """
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.droplevel("Ticker")
-    except Exception as exc:
-        raise DataDownloadError(
-            f"Failed to download '{ticker}' from Yahoo Finance."
-        ) from exc
 
-    if data.empty:
-        raise EmptyDataError(
-            f"No intraday data returned for '{ticker}'."
-        )
+        data.index.name = "Date"
 
-    return data
-
-
-
-
-
-
+        return data.copy()
